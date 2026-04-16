@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>酒店早餐预订服务</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; width: 100%; overflow: hidden; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; background: #f3f4f6; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .chat-container { width: 100%; max-width: 480px; height: 85vh; max-height: 750px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; position: relative; }
+        .progress-bar { position: absolute; top: 0; left: 0; height: 3px; background: rgba(0,0,0,0.05); width: 100%; z-index: 10; }
+        .progress-fill { height: 100%; background: #6b7280; transition: width 0.5s ease; width: 0%; }
+        .header { background: #374151; padding: 16px 20px; color: white; flex-shrink: 0; }
+        .header h2 { font-size: 16px; font-weight: 500; margin-bottom: 4px; }
+        .header p { font-size: 13px; opacity: 0.8; display: flex; align-items: center; gap: 6px; }
+        .online-dot { width: 6px; height: 6px; background: #9ca3af; border-radius: 50%; }
+        .chat-area { flex: 1; overflow-y: auto; padding: 20px; background: #fafafa; display: flex; flex-direction: column; gap: 16px; }
+        .message { display: flex; gap: 10px; max-width: 85%; animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        .message-content { background: white; padding: 12px 16px; border-radius: 12px; border: 1px solid #e5e7eb; line-height: 1.6; font-size: 15px; color: #374151; }
+        .message.user { margin-left: auto; justify-content: flex-end; }
+        .message.user .message-content { background: #6b7280; color: white; border: none; width: fit-content; max-width: 100%; }
+        .message-time { font-size: 11px; color: #9ca3af; margin-top: 4px; text-align: right; }
+        .message.user .message-time { color: rgba(255,255,255,0.6); }
+
+        /* 卡顿提示样式 */
+        .lag-indicator { padding: 12px 16px; background: #fef2f2; border-radius: 12px; border: 1px solid #fecaca; color: #991b1b; font-size: 14px; width: fit-content; }
+
+        /* 等待提示样式 */
+        .waiting-indicator { padding: 12px 16px; background: #f3f4f6; border-radius: 12px; border: 1px solid #e5e7eb; color: #6b7280; font-size: 14px; width: fit-content; }
+
+        /* 状态提示样式（小号字体） */
+        .status-indicator { padding: 8px 12px; background: #f3f4f6; border-radius: 8px; border: 1px solid #e5e7eb; color: #6b7280; font-size: 12px; width: fit-content; align-self: center; margin: 4px 0; }
+
+        /* 预订码样式 */
+        .code-box { background: #f3f4f6; border: 2px dashed #374151; border-radius: 8px; padding: 16px; margin-top: 8px; text-align: center; }
+        .code-text { font-size: 24px; font-weight: 600; color: #374151; font-family: 'Courier New', monospace; letter-spacing: 3px; }
+
+        .input-area { padding: 16px; background: white; border-top: 1px solid #e5e7eb; display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0; }
+        .input-wrapper { flex: 1; background: #f3f4f6; border-radius: 6px; padding: 4px; display: flex; align-items: center; border: 1px solid transparent; transition: all 0.2s; }
+        .input-wrapper:focus-within { border-color: #374151; background: #fff; }
+        .message-input { flex: 1; border: none; background: transparent; padding: 10px 12px; font-size: 15px; outline: none; resize: none; max-height: 100px; font-family: inherit; color: #374151; }
+        .message-input::placeholder { color: #9ca3af; }
+        .send-btn { width: 40px; height: 40px; border-radius: 6px; background: #6b7280; border: none; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
+        .send-btn:hover { background: #4b5563; }
+        .send-btn:active { transform: scale(0.95); }
+        .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        @media(max-width:640px){ body{padding:0;background:#fff} .chat-container{height:100vh;max-height:100vh;border-radius:0;border:none;box-shadow:none} }
+        ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px} ::-webkit-scrollbar-thumb:hover{background:#9ca3af}
+    </style>
+<base target="_blank">
+<base target="_blank">
+<base target="_blank">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="header">
+            <h2>酒店智能客服</h2>
+            <p><span class="online-dot"></span>系统运行中</p>
+        </div>
+        <div class="chat-area" id="chatArea"></div>
+        <div class="input-area">
+            <div class="input-wrapper">
+                <textarea class="message-input" id="messageInput" placeholder="请输入..." rows="1"></textarea>
+            </div>
+            <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22,2 15,22 11,13 2,9 22,2"></polygon>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // 对话状态管理
+        const state = {
+            step: 0,
+            roomNumber: '',
+            needBreakfast: false,
+            selectedDates: [],
+            paymentMethod: '',
+            totalPrice: 0,
+            isCompleted: false,
+            lagCount: 0,        // 卡顿次数计数
+            maxLagCount: 2,     // 最多卡顿次数
+            isConfirming: false,
+            confirmStep: null
+        };
+
+        const chatArea = document.getElementById('chatArea');
+        const messageInput = document.getElementById('messageInput');
+        const progressFill = document.getElementById('progressFill');
+        const sendBtn = document.getElementById('sendBtn');
+
+        // 卡顿话术库
+        const lagPhrases = [
+            "读取信息失败，请稍后",
+            "系统响应延迟，请等待",
+            "连接不稳定，请稍候",
+            "数据处理中，请等待",
+            "网络延迟，请稍候"
+        ];
+
+        // 预订日期范围
+        const BOOKING_DATES = ['5月1日', '5月2日', '5月3日'];
+        const PRICE_PER_DAY = 35;
+
+        // 生成随机延迟 7-10秒
+        function getRandomDelay() {
+            return Math.floor(Math.random() * 3000) + 7000;
+        }
+
+        // 意图识别
+        function recognizeIntent(input) {
+            const text = input.toLowerCase().trim();
+
+            // 否定词检查
+            const negativeWords = ['不', '否', '别', '免', '拒', '取消', '放弃', '算了', 'no', 'not', '不用', '不要', '不想', '不需要', '跳过', '略过', '免了'];
+            for (let neg of negativeWords) {
+                if (text.includes(neg)) return 'skip';
+            }
+
+            // 确认词
+            const confirmWords = ['是', '好', '对', '嗯', '可以', '行', '要', 'yes', 'ok', '确定', '没错'];
+            for (let conf of confirmWords) {
+                if (text.includes(conf)) return 'confirm';
+            }
+
+            return 'neutral';
+        }
+
+        // 解析日期并计算天数
+        function parseSelectedDates(input) {
+            const dates = [];
+            const input_lower = input.toLowerCase();
+
+            if (input_lower.includes('全部') || input_lower.includes('所有') || input_lower.includes('都') || input_lower.includes('三天')) {
+                return [...BOOKING_DATES];
+            } else if (input_lower.includes('1日至2日') || input_lower.includes('1号到2号') || input_lower.includes('1日到2日')) {
+                return ['5月1日', '5月2日'];
+            } else if (input_lower.includes('2日至3日') || input_lower.includes('2号到3号') || input_lower.includes('2日到3日')) {
+                return ['5月2日', '5月3日'];
+            } else if (input_lower.includes('1日至3日') || input_lower.includes('1号到3号') || input_lower.includes('1日到3日')) {
+                return ['5月1日', '5月2日', '5月3日'];
+            } else {
+                if (input_lower.includes('1日') || input_lower.includes('1号')) dates.push('5月1日');
+                if (input_lower.includes('2日') || input_lower.includes('2号')) dates.push('5月2日');
+                if (input_lower.includes('3日') || input_lower.includes('3号')) dates.push('5月3日');
+            }
+
+            return dates.length > 0 ? dates : ['5月1日'];
+        }
+
+        // 计算总价
+        function calculateTotalPrice(daysCount) {
+            return daysCount * PRICE_PER_DAY;
+        }
+
+        // 流程配置 - 4个问题（删除了确认添加步骤）
+        const flow = [
+            { step: 0, field: 'init', text: '有什么可以帮您？', needConfirm: true },
+            { step: 1, field: 'room', text: '房间号是？', needConfirm: false },
+            { step: 2, field: 'confirm', text: '您的房间已包含一份早餐，还需要添加一份吗？', needConfirm: false },
+            { step: 3, field: 'date', text: '您的房间预定日期是5月1日至5月3日，您想在哪天增加早餐？', needConfirm: false }
+            // 第4步（支付）在日期选择后特殊处理，包含状态提示
+        ];
+
+        window.onload = () => {
+            setTimeout(() => {
+                askQuestion(0);
+            }, 500);
+        };
+
+        function addServiceMessage(text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            messageDiv.innerHTML = `
+                <div style="flex: 1;">
+                    <div class="message-content">${text}</div>
+                    <div class="message-time">${getCurrentTime()}</div>
+                </div>
+            `;
+            chatArea.appendChild(messageDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function addUserMessage(text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message user';
+            messageDiv.innerHTML = `
+                <div style="flex: 1;">
+                    <div class="message-content">${text}</div>
+                    <div class="message-time">${getCurrentTime()}</div>
+                </div>
+            `;
+            chatArea.appendChild(messageDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function showWaiting() {
+            const waitingDiv = document.createElement('div');
+            waitingDiv.className = 'message';
+            waitingDiv.id = 'waitingIndicator';
+            waitingDiv.innerHTML = `
+                <div style="flex: 1;">
+                    <div class="waiting-indicator">请稍后</div>
+                </div>
+            `;
+            chatArea.appendChild(waitingDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function hideWaiting() {
+            const el = document.getElementById('waitingIndicator');
+            if (el) el.remove();
+        }
+
+        function showLag() {
+            const lagDiv = document.createElement('div');
+            lagDiv.className = 'message';
+            lagDiv.id = 'lagIndicator';
+            const phrase = lagPhrases[0]; // 使用"读取信息失败，请稍后"
+            lagDiv.innerHTML = `
+                <div style="flex: 1;">
+                    <div class="lag-indicator">${phrase}</div>
+                </div>
+            `;
+            chatArea.appendChild(lagDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function hideLag() {
+            const el = document.getElementById('lagIndicator');
+            if (el) el.remove();
+        }
+
+        function showStatus(text) {
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'message';
+            statusDiv.id = 'statusIndicator';
+            statusDiv.innerHTML = `
+                <div style="flex: 1; display: flex; justify-content: center;">
+                    <div class="status-indicator">${text}</div>
+                </div>
+            `;
+            chatArea.appendChild(statusDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function hideStatus() {
+            const el = document.getElementById('statusIndicator');
+            if (el) el.remove();
+        }
+
+        // 发送消息（带延迟和卡顿）- 开场白(step=0)不出现卡顿
+        function sendMessageWithDelay(text, callback, step = -1) {
+            showWaiting();
+            const delay = getRandomDelay();
+
+            // 开场白(step=0)不出现卡顿；其他步骤在满足条件时出现卡顿
+            const shouldLag = step !== 0 && state.lagCount < state.maxLagCount && Math.random() < 0.5;
+
+            setTimeout(() => {
+                hideWaiting();
+
+                if (shouldLag) {
+                    state.lagCount++;
+                    showLag();
+
+                    setTimeout(() => {
+                        hideLag();
+                        addServiceMessage(text);
+                        if (callback) callback();
+                    }, 3000);
+                } else {
+                    addServiceMessage(text);
+                    if (callback) callback();
+                }
+            }, delay);
+        }
+
+        // 简单延迟发送（固定1.5秒）
+        function simpleDelaySend(text, callback) {
+            setTimeout(() => {
+                addServiceMessage(text);
+                if (callback) callback();
+            }, 1500);
+        }
+
+        // 询问问题
+        function askQuestion(step, isConfirm = false) {
+            const flowItem = flow[step];
+            if (!flowItem) return;
+
+            // 修改：未检测到输入 改为 我无法理解您的意思，麻烦您再输入一遍
+            const questionText = isConfirm ? `我无法理解您的意思，麻烦您再输入一遍，${flowItem.text}` : flowItem.text;
+
+            sendMessageWithDelay(questionText, () => {
+                updateProgress(step);
+            }, step);
+        }
+
+        function updateProgress(step) {
+            const totalSteps = 4; // 总共4个主要步骤
+            const progress = ((step + 1) / totalSteps) * 100;
+            progressFill.style.width = progress + '%';
+        }
+
+        function sendMessage() {
+            const value = messageInput.value.trim();
+            if (!value || state.isCompleted) return;
+
+            sendBtn.disabled = true;
+            addUserMessage(value);
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+
+            setTimeout(() => {
+                processResponse(value);
+            }, 500);
+        }
+
+        function processResponse(value) {
+            const currentFlow = flow[state.step];
+            const intent = recognizeIntent(value);
+
+            // 处理重复确认状态
+            if (state.isConfirming) {
+                state.isConfirming = false;
+
+                // 如果用户是否定词，回到原问题重新回答
+                if (intent === 'skip') {
+                    addServiceMessage('好的，请重新回答：');
+                    askQuestion(state.step, false);
+                    sendBtn.disabled = false;
+                    return;
+                }
+
+                // 确认后进入下一步
+                proceedToNextStep(value);
+                return;
+            }
+
+            // 检查是否需要重复确认
+            if (currentFlow && currentFlow.needConfirm && !state.isConfirming) {
+                state.isConfirming = true;
+                state.confirmStep = state.step;
+                askQuestion(state.step, true);
+                sendBtn.disabled = false;
+                return;
+            }
+
+            // 正常流程处理
+            proceedToNextStep(value);
+        }
+
+        function proceedToNextStep(value) {
+            const currentFlow = flow[state.step];
+            const intent = recognizeIntent(value);
+
+            // 保存数据
+            if (currentFlow.field === 'room') {
+                state.roomNumber = value;
+            } else if (currentFlow.field === 'confirm') {
+                state.needBreakfast = (intent !== 'skip');
+                if (!state.needBreakfast) {
+                    sendMessageWithDelay('好的，如需添加早餐可随时联系。', () => {
+                        state.isCompleted = true;
+                        messageInput.disabled = true;
+                        sendBtn.disabled = true;
+                    }, state.step);
+                    return;
+                }
+            } else if (currentFlow.field === 'date') {
+                state.selectedDates = parseSelectedDates(value);
+                state.totalPrice = calculateTotalPrice(state.selectedDates.length);
+
+                // 日期选择后，显示状态提示序列，然后显示价格和支付问题
+                showStatusSequence();
+                return;
+            }
+
+            // 进入下一步
+            state.step++;
+            if (state.step < flow.length) {
+                askQuestion(state.step);
+            }
+
+            sendBtn.disabled = false;
+        }
+
+        // 显示状态提示序列（7秒延迟依次显示）- 修改为两句
+        function showStatusSequence() {
+            // 禁用输入
+            sendBtn.disabled = true;
+
+            // 第一句：正在回溯与您的聊天信息（7秒）
+            showStatus('正在回溯与您的聊天信息');
+
+            setTimeout(() => {
+                hideStatus();
+                // 第二句：回溯失败，正在重新读取（7秒）
+                showStatus('回溯失败，正在重新读取');
+
+                setTimeout(() => {
+                    hideStatus();
+                    // 显示价格和支付问题
+                    const priceText = `共计¥${state.totalPrice}，如何支付？`;
+
+                    // 这里确保第二次卡顿出现（如果还没达到2次）
+                    if (state.lagCount < state.maxLagCount) {
+                        state.lagCount++;
+                        showLag();
+                        setTimeout(() => {
+                            hideLag();
+                            addServiceMessage(priceText);
+                            updateProgress(3);
+                            sendBtn.disabled = false;
+                        }, 3000);
+                    } else {
+                        addServiceMessage(priceText);
+                        updateProgress(3);
+                        sendBtn.disabled = false;
+                    }
+
+                }, 7000);
+
+            }, 7000);
+        }
+
+        // 生成7位验证码：前4位至少1大1小写字母，后3位数字
+        function generateServiceCode() {
+            const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            const lower = 'abcdefghijklmnopqrstuvwxyz';
+            const nums = '0123456789';
+
+            let letters = [];
+            letters.push(upper[Math.floor(Math.random() * upper.length)]);
+            letters.push(lower[Math.floor(Math.random() * lower.length)]);
+
+            const allLetters = upper + lower;
+            letters.push(allLetters[Math.floor(Math.random() * allLetters.length)]);
+            letters.push(allLetters[Math.floor(Math.random() * allLetters.length)]);
+
+            letters = letters.sort(() => Math.random() - 0.5);
+
+            let numbers = [];
+            numbers.push(nums[Math.floor(Math.random() * nums.length)]);
+            numbers.push(nums[Math.floor(Math.random() * nums.length)]);
+            numbers.push(nums[Math.floor(Math.random() * nums.length)]);
+
+            return letters.join('') + numbers.join('');
+        }
+
+        function getCurrentTime() {
+            const now = new Date();
+            return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+        }
+
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+        });
+
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // 修改后的sendMessage函数，处理支付问题的回答
+        const originalSendMessage = sendMessage;
+        sendMessage = function() {
+            const value = messageInput.value.trim();
+            if (!value || state.isCompleted) return;
+
+            // 检查是否是支付问题的回答（通过检查是否已选择日期且未选择支付方式）
+            if (state.selectedDates.length > 0 && !state.paymentMethod && state.step === 3) {
+                sendBtn.disabled = true;
+                addUserMessage(value);
+                messageInput.value = '';
+                messageInput.style.height = 'auto';
+
+                state.paymentMethod = value;
+
+                // 直接发送预订成功消息（合并为一段，两行显示）
+                const code = generateServiceCode();
+                const successText = `预定成功，预定码为${code}。<br>保存凭证，到店出示`;
+
+                // 使用标准的7-10秒延迟逻辑
+                sendMessageWithDelay(successText, () => {
+                    state.isCompleted = true;
+                    messageInput.disabled = true;
+                    sendBtn.disabled = true;
+                    updateProgress(4);
+                }, 4);
+
+                return;
+            }
+
+            // 其他情况调用原函数
+            originalSendMessage();
+        };
+    </script>
+</body>
+</html>
